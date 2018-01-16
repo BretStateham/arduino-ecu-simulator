@@ -15,7 +15,7 @@
 LiquidCrystal_I2C lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin);
 
 
-MCP_CAN CAN(10);                                      // Set CS to pin 10
+MCP_CAN CAN(10);                                      // Set CS to pin 10 for the ElecFreaks CAN-BUS Shield v1.2
 
 unsigned long canId = 0x000;
 
@@ -91,31 +91,37 @@ void showSensorOnLCD(int line, String label, int value)
 void loop()
 {
     int throttle = getSensor(0,360,580,0,255, "THROTTLE"); //random(0,255);
-    int rpm= getSensor(1,0,1023,0,55, "RPM"); //random(1,55);
-    int maf= getSensor(2,0,1023,0,255, "MAF"); //random(0,255);
+    int rpm = getSensor(1,0,1023,0,55, "RPM"); //random(1,55);
+    int maf = getSensor(2,0,1023,0,255, "MAF"); //random(0,255);
     
     //SHOW Sensors Readings on LCD
     showSensorOnLCD(1,"THROTTLE",throttle);
     showSensorOnLCD(2,"RPM",rpm);
     showSensorOnLCD(3,"MAF",maf);
-    
-//    lcd.setCursor (0,1); // go to start of 2nd line
-//    lcd.print("THROTTLE:" + String(throttle));
-//    lcd.setCursor (0,2); // go to start of 2nd line
-//    lcd.print("RPM:     " + String(rpm));
-//    lcd.setCursor (0,3); // go to start of 2nd line
-//    lcd.print("MAF:     " + String(maf));
 
-    //GENERAL ROUTINE
-    // HMM: http://techtinker.co.za/forum/viewtopic.php?f=14&t=10&start=30#p526
-    // https://en.wikipedia.org/wiki/OBD-II_PIDs#Bitwise_encoded_PIDs
-    unsigned char SupportedPID[8] = {4,65,0,0x081B8000};
-    unsigned char MilCleared[7] =         {4, 65, 63, 34, 224, 185, 147}; 
+    // Define the set of PIDs you wish you ECU to support.  For more information, see:
+    // https://en.wikipedia.org/wiki/OBD-II_PIDs#Mode_1_PID_00
+    // For this sample, we are only supporting the following PIDs
+    // PID (HEX)  PID (DEC)  DESCRIPTION
+    // ---------  ---------  --------------------------
+    //      0x0C         12  Engine RPM
+    //      0x10         16  MAF Air Flow Rate
+    //      0x11         17  Throttle Position
+
+    // As per the information on bitwise encoded PIDs (https://en.wikipedia.org/wiki/OBD-II_PIDs#Mode_1_PID_00)
+    // Our supported PID value is: 
+    // 0x00118000
+    
+    // Of course, if you want your ECU simulator to be able to respond to any PID From 0x00 to 0x20, you can just use
+    // 0xFFFFFFFF
+    
+    unsigned char SupportedPID[8] = {4, 65, 0, 0x00118000};
+    unsigned char MilCleared[7] =   {4, 65, 63, 34, 224, 185, 147}; 
     
     //SENSORS
-    unsigned char throttleSensor[8] =   {4, 65, 0x11, throttle,0,0,0,0};
-    unsigned char rpmSensor[8] =                {4, 65, 0x0C, rpm,0,0,0,0};
-    unsigned char mafSensor[8] =          {4, 65, 0x10, maf,0,0,0,0};
+    unsigned char throttleSensor[8] = {4, 65, 0x11, throttle,0,0,0,0};
+    unsigned char rpmSensor[8] =      {4, 65, 0x0C, rpm,0,0,0,0};
+    unsigned char mafSensor[8] =      {4, 65, 0x10, maf,0,0,0,0};
 
     if(CAN_MSGAVAIL == CAN.checkReceive())  
     {
