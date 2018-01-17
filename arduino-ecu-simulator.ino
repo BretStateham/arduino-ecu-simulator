@@ -1,6 +1,7 @@
 #include <mcp_can.h>
 #include <SPI.h>
 #include "LiquidCrystal_I2C.h"
+#include "pids.h"
 
 #define I2C_ADDR 0x27  // Add your address here.
 #define Rs_pin 0
@@ -12,9 +13,29 @@
 #define D6_pin 6
 #define D7_pin 7
 
-#define led_pin 13
-
 LiquidCrystal_I2C lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin);
+
+// Using this to try and test the MCP2515 data ready interrupt.
+#define led_pin 11
+
+// Used to inidcate that there is no specific sensor value associated with a PID
+#define NO_SENSOR 255
+
+// Define the set of PIDs you wish you ECU to support.  For more information, see:
+// https://en.wikipedia.org/wiki/OBD-II_PIDs#Mode_1_PID_00
+// For this sample, we are only supporting the following PIDs
+// PID (HEX)  PID (DEC)  DESCRIPTION
+// ---------  ---------  --------------------------
+//      0x00         00  PIDs Supported (0x01-0x20)
+//      0x0C         12  Engine RPM
+//      0x10         16  MAF Air Flow Rate
+//      0x11         17  Throttle Position
+
+const int     pidcount                = 4; // There are four PIDs we are supporting (see the list above)
+byte          pids[pidcount]          = {0x00,       0x0C, 0x10, 0x11};
+byte          pidSensorPins[pidcount] = {NO_SENSOR,  A1,   A2,   A0};
+unsigned long pidValues[pidcount]     = {0,          0,    0,    0};
+
 
 #define CAN0_INT 2                                    // Set INT to pin 2
 MCP_CAN CAN0(10);                                      // Set CS to pin 10 for the ElecFreaks CAN-BUS Shield v1.2
@@ -70,6 +91,10 @@ byte uintLSB(unsigned int value)
   return (byte)(value & 0x00FF);
 }
 
+void pin_ISR() {
+  digitalWrite(led_pin, !digitalRead(led_pin));
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -98,6 +123,8 @@ START_INIT:
       Serial.println("CAN BUS Shield init ok!");
         CAN0.setMode(MCP_NORMAL); // Set operation mode to normal so the MCP2515 sends acks to received data.
         pinMode(CAN0_INT, INPUT); // Configuring pin for /INT input
+
+        attachInterrupt(0, pin_ISR, CHANGE);
   }
   else
   {
@@ -110,9 +137,9 @@ START_INIT:
 
 void loop()
 {
-    byte throttle = getSensor(0,360,580,0,255, "THROTTLE"); //random(0,255);
-    unsigned int rpm = getSensor(1,0,1023,0,65535, "RPM"); //random(1,55);
-    unsigned int maf = getSensor(2,0,1023,0,65535, "MAF"); //random(0,255);
+    byte throttle = getSensor(0,360,580,0,255, "THROTTLE"); 
+    unsigned int rpm = getSensor(1,0,1023,0,65535, "RPM"); 
+    unsigned int maf = getSensor(2,0,1023,0,65535, "MAF"); 
     
     //SHOW Sensors Readings on LCD
     showSensorOnLCD(1,"THROTTLE",throttle);
