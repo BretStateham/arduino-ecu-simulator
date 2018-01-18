@@ -16,7 +16,7 @@
 LiquidCrystal_I2C lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin);
 
 // Using this to try and test the MCP2515 data ready interrupt.
-#define led_pin 11
+#define led_pin 12
 
 // Used to inidcate that there is no specific sensor value associated with a PID
 #define NO_SENSOR 255
@@ -91,15 +91,18 @@ byte uintLSB(unsigned int value)
   return (byte)(value & 0x00FF);
 }
 
+volatile int state = LOW;
+
 void pin_ISR() {
-  digitalWrite(led_pin, !digitalRead(led_pin));
+  state = !digitalRead(CAN0_INT);
+  digitalWrite(led_pin,state);
 }
 
 void setup() {
   Serial.begin(115200);
 
   pinMode(led_pin,OUTPUT);
-  digitalWrite(led_pin,HIGH);
+  digitalWrite(led_pin,LOW);
 
   lcd.begin (20,4); //  our LCD is a 20x4, change for your LCD if needed
   
