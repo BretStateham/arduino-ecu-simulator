@@ -13,49 +13,39 @@
 #define D6_pin 6
 #define D7_pin 7
 
+//Using Cory J Fowler's fork of the Seeed Studio CAN BUS Shield library:
+//https://github.com/coryjfowler/MCP_CAN_lib
+
+//Using the New LiquidCrystal I2C Library from:
+//https://bitbucket.org/fmalpartida/new-liquidcrystal/downloads/
+
 LiquidCrystal_I2C lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin);
 
 // Using this to try and test the MCP2515 data ready interrupt.
-#define led_pin 12
+// #define led_pin 12
 
-// Used to inidcate that there is no specific sensor value associated with a PID
-#define NO_SENSOR 255
-
-// Define the set of PIDs you wish you ECU to support.  For more information, see:
-// https://en.wikipedia.org/wiki/OBD-II_PIDs#Mode_1_PID_00
-// For this sample, we are only supporting the following PIDs
-// PID (HEX)  PID (DEC)  DESCRIPTION
-// ---------  ---------  --------------------------
-//      0x00         00  PIDs Supported (0x01-0x20)
-//      0x0C         12  Engine RPM
-//      0x10         16  MAF Air Flow Rate
-//      0x11         17  Throttle Position
-
-const int     pidcount                = 4; // There are four PIDs we are supporting (see the list above)
-byte          pids[pidcount]          = {0x00,       0x0C, 0x10, 0x11};
-byte          pidSensorPins[pidcount] = {NO_SENSOR,  A1,   A2,   A0};
-unsigned long pidValues[pidcount]     = {0,          0,    0,    0};
-
-
-#define CAN0_INT 2                                    // Set INT to pin 2
+#define CAN0_INT 2                                     // Set INT to pin 2
 MCP_CAN CAN0(10);                                      // Set CS to pin 10 for the ElecFreaks CAN-BUS Shield v1.2
 
+// This will store the ID of the incoming can message
 long unsigned int canId = 0x000;
-
+// this is the length of the incoming message
 unsigned char len = 0;
+// This the eight byte buffer of the incoming message data payload
 unsigned char buf[8];
-char str[20];
-
-String BuildMessage="";
-int MSGIdentifier=0;
+String canMessageRead="";
+//char str[20];
 
 int getSensor(int pin, int inMin, int inMax, unsigned int outMin, unsigned int outMax, String sensorName){
   
   //Read the sensor
   int sensor = analogRead(pin);
+
+  //Clamp the sensor to be no greater than inMax
+  if(sensor > inMax) { sensor = inMax; }
   
   //Map it to the desired output min-max range
-  int s = map(sensor,inMin,inMax,outMin,outMax); //360,580,0,255
+  int s = map(sensor,inMin,inMax,outMin,outMax);
   
   //Clamp it to the desired output min-max range
   s = max(min(s,outMax),outMin);
@@ -75,10 +65,15 @@ void showSensorOnLCD(int line, String label, unsigned int value)
     
   lcd.setCursor(0,line);
   lcd.print(label);
+  Serial.print(label);
   for(int s = 0; s < spaces; s++){
     lcd.print(" ");
+    Serial.print(" ");
   }
   lcd.print(stringVal);
+  Serial.println(stringVal);
+
+  
 }
 
 byte uintMSB(unsigned int value)
@@ -91,18 +86,18 @@ byte uintLSB(unsigned int value)
   return (byte)(value & 0x00FF);
 }
 
-volatile int state = LOW;
+// volatile int state = LOW;
 
-void pin_ISR() {
-  state = !digitalRead(CAN0_INT);
-  digitalWrite(led_pin,state);
-}
+//void pin_ISR() {
+//  state = !digitalRead(CAN0_INT);
+//  digitalWrite(led_pin,state);
+//}
 
 void setup() {
   Serial.begin(115200);
 
-  pinMode(led_pin,OUTPUT);
-  digitalWrite(led_pin,LOW);
+  //pinMode(led_pin,OUTPUT);
+  //digitalWrite(led_pin,LOW);
 
   lcd.begin (20,4); //  our LCD is a 20x4, change for your LCD if needed
   
@@ -124,10 +119,10 @@ START_INIT:
   if(CAN_OK == CAN0.begin(MCP_ANY, CAN_500KBPS, MCP_16MHZ))                   
   {
       Serial.println("CAN BUS Shield init ok!");
-        CAN0.setMode(MCP_NORMAL); // Set operation mode to normal so the MCP2515 sends acks to received data.
-        pinMode(CAN0_INT, INPUT); // Configuring pin for /INT input
+      CAN0.setMode(MCP_NORMAL); // Set operation mode to normal so the MCP2515 sends acks to received data.
+      pinMode(CAN0_INT, INPUT); // Configuring pin for /INT input
 
-        attachInterrupt(0, pin_ISR, CHANGE);
+      //attachInterrupt(0, pin_ISR, CHANGE);
   }
   else
   {
@@ -140,12 +135,12 @@ START_INIT:
 
 void loop()
 {
-    byte throttle = getSensor(0,360,580,0,255, "THROTTLE"); 
-    unsigned int rpm = getSensor(1,0,1023,0,65535, "RPM"); 
-    unsigned int maf = getSensor(2,0,1023,0,65535, "MAF"); 
+    byte ect         = getSensor(0,0,1000,0,255, "ECT");   //inMax SHOULD legitimately be 1023 but setting to 1000 for innacurate pots
+    unsigned int rpm = getSensor(1,0,1000,0,65535, "RPM"); //inMax SHOULD legitimately be 1023 but setting to 1000 for innacurate pots
+    unsigned int maf = getSensor(2,0,1000,0,65535, "MAF"); //inMax SHOULD legitimately be 1023 but setting to 1000 for innacurate pots
     
     //SHOW Sensors Readings on LCD
-    showSensorOnLCD(1,"THROTTLE",throttle);
+    showSensorOnLCD(1,"ECT",ect);
     showSensorOnLCD(2,"RPM",rpm);
     showSensorOnLCD(3,"MAF",maf);
 
@@ -154,24 +149,46 @@ void loop()
     // For this sample, we are only supporting the following PIDs
     // PID (HEX)  PID (DEC)  DESCRIPTION
     // ---------  ---------  --------------------------
+    //      0x15         05  Engine Coolant Temperature
     //      0x0C         12  Engine RPM
     //      0x10         16  MAF Air Flow Rate
-    //      0x11         17  Throttle Position
 
     // As per the information on bitwise encoded PIDs (https://en.wikipedia.org/wiki/OBD-II_PIDs#Mode_1_PID_00)
     // Our supported PID value is: 
-    // 0x00118000
+    //     PID 0x05 (05) - Engine Coolant Temperature
+    //     |      PID 0x0C (12) - Engine RPM
+    //     |      |   PID 0x10 (16) - MAF Air Flow Rate
+    //     |      |   |
+    //     V      V   V
+    // 00001000000100010000000000000000
+    // Converted to hex, that is the following four byte value
+    // 0x08110000
+
     
-    // Of course, if you want your ECU simulator to be able to respond to any PID From 0x00 to 0x20, you can just use
+    // Of course, if you want your ECU simulator to be able to respond to any PID From 0x00 to 0x20, you can just use the following PID Bit mask
+    // 11111111111111111111111111111111
+    // Or 
     // 0xFFFFFFFF
+
+    // Next, we'll create the bytearray that will be the Supported PID query response data payload using the four bye supported pi hex value
+    // we determined above (0x08110000):
     
-    byte SupportedPID[8] = {6, 65, 0, 0x00, 0x11, 0x80, 0x00};
-    byte MilCleared[7] =   {6, 65, 1, 0x80, 0x00, 0x00, 0x00}; 
+    //                      0x06 - additional meaningful bytes after this one (1 byte Service Mode, 1 byte PID we are sending, and the four by Supported PID value)
+    //                       |    0x41 - This is a response (0x40) to a service mode 1 (0x01) query.  0x40 + 0x01 = 0x41
+    //                       |     |    0x00 - The response is for PID 0x00 (Supported PIDS 1-20)
+    //                       |     |     |    0x08 - The first of four bytes of the Supported PIDS value
+    //                       |     |     |     |    0x11 - The second of four bytes of the Supported PIDS value
+    //                       |     |     |     |     |    0x00 - The third of four bytes of the Supported PIDS value
+    //                       |     |     |     |     |      |   0x00 - The fourth of four bytes of the Supported PIDS value
+    //                       |     |     |     |     |      |    |    0x00 - OPTIONAL - Just extra zeros to fill up the 8 byte CAN message data payload)
+    //                       |     |     |     |     |      |    |     |
+    //                       V     V     V     V     V      V    V     V 
+    byte SupportedPID[8] = {0x06, 0x41, 0x00, 0x08, 0x11, 0x00, 0x00, 0x00};
     
     //SENSORS
-    byte throttleSensor[8] = {3, 65, 0x11, throttle};
-    byte rpmSensor[8] =      {4, 65, 0x0C, uintMSB(rpm), uintLSB(rpm)};
-    byte mafSensor[8] =      {4, 65, 0x10, uintMSB(maf), uintLSB(maf)};
+    byte ectSensor[8] = {3, 65, 0x05, ect};
+    byte rpmSensor[8] = {4, 65, 0x0C, uintMSB(rpm), uintLSB(rpm)};
+    byte mafSensor[8] = {4, 65, 0x10, uintMSB(maf), uintLSB(maf)};
 
     //if(CAN_MSGAVAIL == CAN.checkReceive())  
     if(!digitalRead(CAN0_INT))
@@ -187,19 +204,18 @@ void loop()
 
         for(int i = 0; i<len; i++)
         {  
-          BuildMessage = BuildMessage + buf[i] + ",";
+          canMessageRead = canMessageRead + buf[i] + ",";
         }
-        Serial.println(BuildMessage);
+        Serial.println(canMessageRead);
         
-        //Check wich message was received.
-        if(BuildMessage=="2,1,0,0,0,0,0,0,") {CAN0.sendMsgBuf(0x7E8, 0, 8, SupportedPID);}
-        if(BuildMessage=="2,1,1,0,0,0,0,0,") {CAN0.sendMsgBuf(0x7E8, 0, 8, MilCleared);}
+        //Check which message was received.
+        if(canMessageRead=="2,1,0,0,0,0,0,0,") {CAN0.sendMsgBuf(0x7E8, 0, 8, SupportedPID);}
         
         //SEND SENSOR STATUSES
-        if(BuildMessage=="2,1,17,0,0,0,0,0,"){CAN0.sendMsgBuf(0x7E8, 0, 8, throttleSensor);}
-        if(BuildMessage=="2,1,16,0,0,0,0,0,"){CAN0.sendMsgBuf(0x7E8, 0, 8, mafSensor);}
-        if(BuildMessage=="2,1,12,0,0,0,0,0,"){CAN0.sendMsgBuf(0x7E8, 0, 8, rpmSensor);}
+        if(canMessageRead=="2,1,5,0,0,0,0,0,")  {CAN0.sendMsgBuf(0x7E8, 0, 8, ectSensor);}
+        if(canMessageRead=="2,1,12,0,0,0,0,0,"){CAN0.sendMsgBuf(0x7E8, 0, 8, rpmSensor);}
+        if(canMessageRead=="2,1,16,0,0,0,0,0,"){CAN0.sendMsgBuf(0x7E8, 0, 8, mafSensor);}
 
-        BuildMessage="";
+        canMessageRead="";
     }
 }
