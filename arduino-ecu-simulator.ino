@@ -149,7 +149,7 @@ void loop()
     // For this sample, we are only supporting the following PIDs
     // PID (HEX)  PID (DEC)  DESCRIPTION
     // ---------  ---------  --------------------------
-    //      0x15         05  Engine Coolant Temperature
+    //      0x05         05  Engine Coolant Temperature
     //      0x0C         12  Engine RPM
     //      0x10         16  MAF Air Flow Rate
 
